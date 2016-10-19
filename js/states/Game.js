@@ -9,9 +9,17 @@ CloudHop.GameState = {
 
     this.platformPool = this.add.group();
 
-    this.coinsPool = this.add.group();
-    this.coinsPool.enableBody = true;
-    
+    this.gemsPool = this.add.group();
+    this.gemsPool.enableBody = true;
+
+    this.extraSaviorClouds = this.add.group()
+    this.extraSaviorClouds.enableBody = true;
+
+    this.saviorClouds = this.add.group();
+    this.saviorClouds.enableBody = true;
+    this.playerBeingSaved = false;
+    this.savesLeft = 3;
+
     //gravity
     this.game.physics.arcade.gravity.y = 1000;  
 
@@ -20,17 +28,26 @@ CloudHop.GameState = {
 
     this.cursors = this.game.input.keyboard.createCursorKeys(); 
 
-    this.myCoins = 0;
+    this.playerScore = 0;
 
     this.levelSpeed = -200;
     this.speedFixer = 250;
 
     this.playerX = 100;
 
+    //lightning
+    this.lightning = this.add.group();
+    this.lightning.enableBody = true;
+    this.thunder = this.add.audio('thunder');
+
+    //collect extra cloud sound
+    this.success = this.add.audio('success');
+
+
+
     
   },
   create: function() {
-
     //moving background
     this.background = this.add.tileSprite(0, 0, this.game.world.width, this.game.world.height, 'game-sprites', 'clouds-bg');
     this.background.tileScale.y = 1.3;
@@ -38,7 +55,7 @@ CloudHop.GameState = {
     
 
     //hard-code first platform
-    this.currentPlatform = new CloudHop.Platform(this.game, this.floorPool, 12, 0, 200, this.levelSpeed, this.coinsPool);
+    this.currentPlatform = new CloudHop.Platform(this.game, this.floorPool, 12, 0, 200, this.levelSpeed, this.gemsPool, this.extraSaviorClouds);
     this.platformPool.add(this.currentPlatform);
 
     //player
@@ -47,20 +64,25 @@ CloudHop.GameState = {
     this.player.animations.add('running', Phaser.Animation.generateFrameNames('run_', 1, 3), 10, true);
 
     this.game.physics.arcade.enable(this.player);
-    this.player.body.setSize(55, 70, 15, 10);
+    this.player.body.setSize(55, 55, 15, 25);
     this.player.animations.play('running');
+    this.zap = this.add.audio('zap');
 
-
-    this.coinSound = this.add.audio('coin');
-    this.coinSound.volume = 0.2;
+    this.gemSound = this.add.audio('gem');
+    this.gemSound.volume = 0.2;
 
     this.loadLevel();
     this.game.world.sendToBack(this.player);
     this.game.world.sendToBack(this.background);
-
-    //show coins
+    
+    //show gems
     var style = {font: '30px Ariel', fill: '#fff'};
-    this.coinCountLabel = this.add.text(10, 10, 'Score: 0', style);
+    this.gemCountLabel = this.add.text(10, 10, 'Score: 0', style);
+
+    //show savior clouds left
+    this.saviorsLeftImg = this.game.add.sprite(10, 50, 'game-sprites', 'cloud-1');
+    this.saviorsLeftImg.scale.setTo(0.5);
+    this.saviorsLeftText = this.game.add.text(50, 46, "x"+this.savesLeft, {font: '20px Ariel', fill: '#fff'})
 
     //music
     this.music = this.add.audio('music');
@@ -70,14 +92,27 @@ CloudHop.GameState = {
 
     //mute button
     this.muteButton();
-  },   
-  update: function() { 
 
-   
-    this.game.physics.arcade.overlap(this.player, this.coinsPool, this.collectCoin, null, this);
+    //start lightning
+    this.game.time.events.add(Phaser.Timer.SECOND*(5+Math.random()*15), this.setupLightningTimer, this);
+  },   
+  update: function() {
+    if (!this.playerBeingSaved){
+      this.game.physics.arcade.overlap(this.player, this.lightning, this.zapped, null, this);
+      this.game.physics.arcade.overlap(this.player, this.gemsPool, this.collectGem, null, this);  
+      this.game.physics.arcade.overlap(this.player, this.extraSaviorClouds, this.collectCloud, null, this);  
+    } else {
+      this.game.physics.arcade.collide(this.player, this.saviorClouds);  
+    }
+    
+
+    
 
     this.platformPool.forEachAlive(function(platform, index){
-      this.game.physics.arcade.collide(this.player, platform);
+      if (!this.playerBeingSaved){
+        this.game.physics.arcade.collide(this.player, platform);  
+      }
+      
 
       //check for platforms to kill
       if (platform.length && platform.children[platform.length-1].right < 0){
@@ -85,10 +120,10 @@ CloudHop.GameState = {
       }
     }, this);
 
-    //kill coins that leave the screen
-    this.coinsPool.forEachAlive(function(coin){
-      if(coin.right <= 0) {
-        coin.kill();
+    //kill gems that leave the screen
+    this.gemsPool.forEachAlive(function(gem){
+      if(gem.right <= 0) {
+        gem.kill();
       }
     }, this);
 
@@ -111,9 +146,20 @@ CloudHop.GameState = {
     if (this.player.alive){
       if (this.cursors.up.isDown || this.game.input.activePointer.isDown){
         this.playerJump();
-      } else if (this.cursors.up.isUp || this.game.input.activePointer.isUp){
+      } 
+      else if (this.cursors.up.isUp || this.game.input.activePointer.isUp){
         this.isJumping = false;
       }
+    }
+
+    //align savior cloud
+    if (this.playerBeingSaved){
+      this.saviorClouds.setAll('x', this.player.x);
+    }
+
+    //check for savior cloud
+    if ( this.player.bottom >= this.game.world.height-20 && this.savesLeft > 0 && !this.playerBeingSaved){
+      this.createSaviorCloud();
     }
 
     //check for game over
@@ -121,7 +167,89 @@ CloudHop.GameState = {
       this.gameOver();
     }
 
+  },
+  createSaviorCloud: function(){
+    this.playerBeingSaved = true;
+    this.blinkStart(0.3);
+    this.savesLeft -= 1;
+    this.saviorsLeftText.text = "x"+this.savesLeft;
+
+    var saviorCloud = this.saviorClouds.getFirstExists(false);
+    var x = this.player.x;
+    var y = this.player.bottom+30;
+    if (!saviorCloud){
+      saviorCloud = this.saviorClouds.create(x, y, 'game-sprites', 'cloud-1');
+    }else {
+      saviorCloud.reset(x, y);
+    }
+    saviorCloud.anchor.setTo(0.5);
+    saviorCloud.body.immovable = true;
+    saviorCloud.body.allowGravity = false;
     
+    this.player.body.velocity.y = 0;
+    saviorCloud.body.velocity.y = -210;
+    this.game.time.events.add(Phaser.Timer.SECOND*1, function(){
+      saviorCloud.body.velocity.y = 0;
+      this.player.body.velocity.y = 0;
+      this.game.time.events.add(Phaser.Timer.SECOND*1, function(){
+        
+        this.game.time.events.remove(this.blinkTimer);
+        this.blinkStart(0.1);
+
+        this.game.time.events.add(Phaser.Timer.SECOND*1, function(){
+          this.playerBeingSaved = false;
+          this.game.time.events.remove(this.blinkTimer);
+          this.player.alpha = 1;
+          saviorCloud.kill();
+        }, this);
+
+      }, this);
+    }, this);
+  },
+  blinkStart: function(time){
+    this.blinkTimer = this.game.time.events.add(Phaser.Timer.SECOND*time, function(){
+      if (this.player.alpha == 1){
+        this.player.alpha = .3;
+      } else {
+        this.player.alpha = 1;
+      }
+    }, this);
+    this.blinkTimer.loop = true;
+    this.blinkTimer.autoDestroy = true;
+  },
+  setupLightningTimer: function(){
+    this.createLightning();
+    var seconds = 7 + Math.random()*8;
+    this.game.time.events.add(Phaser.Timer.SECOND * seconds, this.setupLightningTimer, this);
+    
+  },
+  createLightning: function(){
+    var lightning = this.lightning.getFirstExists(false);
+    var randX = -10+Math.random()*30;
+    if (!lightning){
+      lightning = new CloudHop.Lightning(this.game, this.game.world.width+randX, -20);
+      this.lightning.add(lightning);
+    } else {
+      lightning.reset(this.game.world.width+randX, -20)
+    }
+
+    var speed = 80;
+    lightning.body.allowGravity = false;
+    lightning.body.velocity.x = -4*speed;
+    lightning.body.velocity.y = 2*speed;
+    lightning.activated = true;
+
+    this.thunder.play();
+  },
+  zapped: function(player, lightning){
+    //
+    if (lightning.activated){
+      lightning.activated = false;
+      player.body.y -= 1;
+      player.body.velocity.y = -(500 + Math.random()*300);
+
+      this.zap.play();
+    }
   },
   playerJump: function(){
     if (this.player.body.touching.down){
@@ -142,6 +270,11 @@ CloudHop.GameState = {
     this.createPlatform();
   },
   createPlatform: function(){
+
+
+    
+    
+
     var nextPlatformData = this.generateRandomPlatform();
     if (nextPlatformData){
 
@@ -150,7 +283,7 @@ CloudHop.GameState = {
       if (!this.currentPlatform){
         this.currentPlatform = new CloudHop.Platform(this.game, this.floorPool, 
         nextPlatformData.numTiles, this.game.world.width + nextPlatformData.separation, 
-        nextPlatformData.y, this.levelSpeed, this.coinsPool);  
+        nextPlatformData.y, this.levelSpeed, this.gemsPool, this.extraSaviorClouds);  
       } else {
         this.currentPlatform.prepare(nextPlatformData.numTiles, this.game.world.width + nextPlatformData.separation, 
         nextPlatformData.y, this.levelSpeed);  
@@ -180,11 +313,17 @@ CloudHop.GameState = {
      return data;
 
   },
-  collectCoin: function(player, coin){
-    coin.kill();
-    this.myCoins++;
-    this.coinSound.play();
-    this.coinCountLabel.text = 'Score: '+this.myCoins;
+  collectGem: function(player, gem){
+    gem.kill();
+    this.playerScore += gem.value;
+    this.gemSound.play();
+    this.gemCountLabel.text = 'Score: '+this.playerScore;
+  },
+  collectCloud: function(player, cloud){
+    cloud.kill();
+    this.savesLeft++;
+    this.success.play();
+    this.saviorsLeftText.text = "x"+this.savesLeft;
   },
   gameOver: function(){
     this.player.kill();
@@ -208,7 +347,7 @@ CloudHop.GameState = {
 
       style = {font: '20px Ariel', fill: '#fff'};
       this.add.text(this.game.width/2, this.game.height/2+20, 'High Score: '+this.highScore, style).anchor.setTo(0.5);
-      this.add.text(this.game.width/2, this.game.height/2+50, 'Your Score: '+this.myCoins, style).anchor.setTo(0.5);
+      this.add.text(this.game.width/2, this.game.height/2+50, 'Your Score: '+this.playerScore, style).anchor.setTo(0.5);
       style = {font: '12px Ariel', fill: '#fff'};
       this.add.text(this.game.width/2, this.game.height/2+90, 'Tap to play Again', style).anchor.setTo(0.5);
 
@@ -229,8 +368,8 @@ CloudHop.GameState = {
   updateHighScore(){
     this.highScore = +localStorage.getItem('highScore');
 
-    if (this.myCoins > this.highScore){
-      this.highScore = this.myCoins;
+    if (this.playerScore > this.highScore){
+      this.highScore = this.playerScore;
       localStorage.setItem('highScore', this.highScore);
     }
 
@@ -262,7 +401,10 @@ CloudHop.GameState = {
   // ,
   // render: function(){
   //   this.game.debug.body(this.player);  
-  //   //this.game.debug.bodyInfo(this.player, 5, 10);
+    
+  //   this.lightning.forEachAlive(function(ltn){
+  //     this.game.debug.body(ltn);  
+  //   }, this);
   // }
 };
 

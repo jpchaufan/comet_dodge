@@ -1,6 +1,6 @@
 var CloudHop = CloudHop || {};
 
-CloudHop.Platform = function(game, floorPool, numTiles, x, y, speed, coinsPool) {
+CloudHop.Platform = function(game, floorPool, numTiles, x, y, speed, gemsPool, extraSaviorClouds) {
 	Phaser.Group.call(this, game);
 	
 	this.tileSize = 40;
@@ -8,8 +8,10 @@ CloudHop.Platform = function(game, floorPool, numTiles, x, y, speed, coinsPool) 
 	this.enableBody = true;
 	this.speed = speed;
 	this.floorPool = floorPool;
-	this.coinsPool = coinsPool;
-	
+	this.gemsPool = gemsPool;
+	this.extraSaviorClouds = extraSaviorClouds;
+	// console.log(this.extraSaviorClouds);
+	// console.log(this.gemsPool);
 	this.prepare(numTiles, x, y, speed);
 
 
@@ -56,8 +58,9 @@ CloudHop.Platform.prototype.prepare = function(numTiles, x, y, speed) {
 	    }
 
 		
-	    this.add(floorTile);    
-	    floorTile.body.setSize(60, 0, 0, 10);
+	    this.add(floorTile); 
+
+	    floorTile.body.setSize(floorTile.width, 0, 0, 10);
 	    i++;
 	}
   
@@ -68,7 +71,7 @@ CloudHop.Platform.prototype.prepare = function(numTiles, x, y, speed) {
 
 
 
-	this.addCoins();
+	this.addCollectibles();
 }
 
 
@@ -86,33 +89,66 @@ CloudHop.Platform.prototype.kill = function(){
 }
 
 
-CloudHop.Platform.prototype.addCoins = function(){
-	var coinsY = 50 + Math.random()*(140);
+CloudHop.Platform.prototype.addCollectibles = function(){
+	var gemsY = 50 + Math.random()*(140);
 
-	var hasCoin;
+	var hasgem;
 	this.forEach(function(tile){
-		hasCoin = Math.random() <= 0.4;
+		hasGem = Math.random() <= 0.4;
 
-		if (hasCoin){
-			var coin = this.coinsPool.getFirstExists(false);
+		if (hasGem){
+			var gem = this.gemsPool.getFirstExists(false);
 
-			if (!coin){
-				coin = new Phaser.Sprite(this.game, tile.x, tile.y - coinsY, 'game-sprites', 'jewel-red-1');
-				this.coinsPool.add(coin);
-			} else {
-				coin.reset(tile.x, tile.y - coinsY);
+			//choose red blue or green
+
+			var color = "green";
+			var value = 1;
+
+			var chance = Math.random();
+			if ( chance > 0.9 ){
+				color = "blue";
+				value = 5;
+			} else if ( chance > 0.7 ){
+				color = "red";
+				value = 3;
 			}
-			coin.animations.add('shine', Phaser.Animation.generateFrameNames('jewel-red-', 1, 6), 10, false);
-			coin.animations.play('shine');	
+
+
+
+			if (!gem){
+				gem = new Phaser.Sprite(this.game, tile.x, tile.y - gemsY, 'game-sprites', 'jewel-'+color+'-1');
+				this.gemsPool.add(gem);
+			} else {
+				gem.reset(tile.x, tile.y - gemsY);
+			}
+			gem.value = value;
+			gem.animations.add('shine', Phaser.Animation.generateFrameNames('jewel-'+color+'-', 1, 6), 10, false);
+			gem.animations.play('shine');	
 
 			var shineTime = Phaser.Timer.SECOND * Math.max( (4 * Math.random()), 1 );
-			coin.shineTimer = this.game.time.events.loop(shineTime, function(){
-				coin.animations.play('shine');	
+			gem.shineTimer = this.game.time.events.loop(shineTime, function(){
+				gem.animations.play('shine');	
 			}, this)
 			
 
-			coin.body.velocity.x = this.speed;
-			coin.body.allowGravity = false;
+			gem.body.velocity.x = this.speed;
+			gem.body.allowGravity = false;
+		} 
+		else if ( Math.random() > 0.998 ){ // extra cloud
+			if (this.extraSaviorClouds){
+				var extra = this.extraSaviorClouds.getFirstExists(false);
+
+				if (!extra){
+					extra = new Phaser.Sprite(this.game, tile.x, tile.y - gemsY, 'game-sprites', 'cloud-1');
+					this.extraSaviorClouds.add(extra);
+				} else {
+					extra.reset(tile.x, tile.y - gemsY);
+				}
+				extra.scale.setTo(0.4);
+
+				extra.body.velocity.x = this.speed;
+				extra.body.allowGravity = false;	
+			}
 		}
 	}, this);
 }
